@@ -156,7 +156,7 @@ if __name__ == '__main__':
     fft_size = 4096 #Should be a power of 2
     samp_rate = 250e3
 
-    middle_freq = 90e3 #NRK P1
+    middle_freq = 90.3e6 #NRK P1
     #middle_freq = 144.450e6 #Vassfjellet
     gain = 10
     bandwidth = 250e3

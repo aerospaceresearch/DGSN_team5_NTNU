@@ -26,24 +26,12 @@ import osmosdr
 
 import time
 
+from morse_decoder import morse_decoder
+
 from matplotlib import pyplot as plt
 import numpy as np
 
 
-#### skeleton for the morse decoder class ####
-class morse_decoder ():
-    
-    def __init__(self, dataPerFrame = 4096):
-        self.dataPerFrame = dataPerFrame
-    
-
-    def feed_input(self, input):
-        
-        
-        if len(input) == self.dataPerFrame:
-            print "recieved frame of length ", len(input)
-        else:
-            print "ERROR: wrong dataPerFrame size" + len(input) + " vs. " + dataPerFrame
 
 
 #### The 'radio' class, created using gnuradio blocks ####
@@ -161,6 +149,9 @@ if __name__ == '__main__':
     gain = 10
     bandwidth = 250e3
     
+    morse_evaluation_time_range = 20#seconds
+    buffer_size_max = (int)(samp_rate / fft_size) * morse_evaluation_time_range
+    
     
     #### Options set up ####
     parser = OptionParser(option_class=eng_option, usage="%prog: [options]")
@@ -181,10 +172,11 @@ if __name__ == '__main__':
 
     radio.start()
     
-    decoder = morse_decoder(radio.fft_size);
+    decoder = morse_decoder(fft_size, buffer_size_max);
 
     
     fft_data = []
+    fft_feeding_frames = []
 
     ##### crude and dirty animation of fft spectrum for bug testing ####
 #    firstAnimStage = True #animation code
@@ -195,20 +187,19 @@ if __name__ == '__main__':
         while True:
             
             time.sleep(0.1) #doing this as it avoids some memory issues, a stream based solutions is probably better
-            print "sink length ",len(radio.fft_sink_real.data())
+            #print "sink length ",len(radio.fft_sink_real.data())
             
             if len (radio.fft_sink_real.data()) > radio.fft_size:
 
-                fft_data.extend(radio.fft_sink_real.data())
+                fft_data.extend(20*np.log10(np.abs(radio.fft_sink_real.data())))
                 
 #                secondAnimStage = True #animation test code
 
                 while (radio.fft_size < len(fft_data)):
                     
-                    #### feed frame to decoder ####
-                    decoder.feed_input(fft_data[0 : radio.fft_size])
+                    fft_feeding_frames.append(fft_data[0 : radio.fft_size])
                     
-#                    if firstAnimStage: #animation test code
+#                    if firstAnimStage: #animation test code.
 #                        firstAnimStage = False #animation test code
 #                        pl, = plt.plot(fft_data[0 : radio.fft_size]) #animation test code
 #                    elif secondAnimStage: #animation test code
@@ -217,6 +208,11 @@ if __name__ == '__main__':
 #                        plt.draw() #animation test code
 
                     del fft_data[0 : radio.fft_size]
+                
+                #### feed frame to decoder ####
+                decoder.feed_input(fft_feeding_frames)
+                
+                del fft_feeding_frames[:]
             
                 radio.fft_sink_real.reset()
 

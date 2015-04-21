@@ -43,7 +43,10 @@ invMorseAlphabet = {v: k for k, v in morseAlphabet.items()}
 
 def morseToLatin(morseletter):
 	#global invMorseAlphabet
-	return invMorseAlphabet[morseletter]
+    try:
+        return invMorseAlphabet[morseletter]
+    except:
+        return "?"
 
 def translateMorseString(string):
 	letter = ""

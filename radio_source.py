@@ -21,6 +21,7 @@ from optparse import OptionParser
 from gnuradio.fft import window
 
 from gnuradio import fft
+from gnuradio.fft import logpwrfft
 
 import osmosdr
 
@@ -31,6 +32,9 @@ from morse_decoder import morse_decoder
 from matplotlib import pyplot as plt
 import numpy as np
 
+import struct
+
+import thread
 
 
 
@@ -75,32 +79,33 @@ class radio_input(gr.top_block):
             self.block_throttle_real = blocks.throttle(gr.sizeof_float*1, samp_rate,True) #throttles reading from the wav file to simulate real time radio
             self.block_throttle_im = blocks.throttle(gr.sizeof_float*1, samp_rate,True)
 
-                
-        self.stream_to_vector_block = blocks.stream_to_vector(gr.sizeof_gr_complex*1, fft_size)
-        self.fft_block = fft.fft_vcc(fft_size, True, (window.blackmanharris(fft_size)), True, 1)
-        self.block_fft_complex_to_float = blocks.complex_to_float(fft_size)
+        self.logpwrfft_x_0 = logpwrfft.logpwrfft_c(
+               sample_rate=samp_rate,
+               fft_size=fft_size,
+               ref_scale=2,
+               frame_rate=20,
+               avg_alpha=1.0,
+               average=False,
+        )
         
-        self.fft_sink_real = blocks.vector_sink_f(fft_size)
-        #self.fft_sink_im = blocks.vector_sink_f(fft_size) # Q part of the I/Q signal, currently not used
+        self.msgq_out = blocks_message_sink_0_msgq_out = gr.msg_queue(2)
         
+        self.blocks_message_sink_0 = blocks.message_sink(gr.sizeof_float*fft_size, blocks_message_sink_0_msgq_out, False)
+        
+
 
         #### Connections ####
-        
         if sourceType == 0:
-             self.connect((self.rtl2832_source, 0), (self.stream_to_vector_block, 0))
-
+            self.connect((self.rtl2832_source, 0), (self.logpwrfft_x_0, 0))
+        
         elif sourceType == 1:
             self.connect((self.blocks_wavfile_source_0, 1), (self.block_throttle_im, 0))
             self.connect((self.blocks_wavfile_source_0, 0), (self.block_throttle_real, 0))
             self.connect((self.block_throttle_real, 0), (self.block_wav_float_to_complex, 0))
             self.connect((self.block_throttle_im, 0), (self.block_wav_float_to_complex, 1))
-            self.connect((self.block_wav_float_to_complex, 0), (self.stream_to_vector_block, 0))
-        
-        
-        self.connect((self.stream_to_vector_block, 0), (self.fft_block, 0))
-        self.connect((self.fft_block, 0), (self.block_fft_complex_to_float, 0))
-        self.connect((self.block_fft_complex_to_float, 0), (self.fft_sink_real, 0))
-        #self.connect((self.block_fft_complex_to_float, 1), (self.fft_sink_im, 0))
+            self.connect((self.block_wav_float_to_complex, 0), (self.logpwrfft_x_0, 0))
+
+        self.connect((self.logpwrfft_x_0, 0), (self.blocks_message_sink_0, 0))
 
 
 
@@ -133,7 +138,6 @@ class radio_input(gr.top_block):
         self.rtl2832_source.set_bandwidth(self.bandwidth, 0)
 
 
-
 if __name__ == '__main__':
     
     
@@ -141,21 +145,23 @@ if __name__ == '__main__':
     sourceType = 0
     filename = ""
     
-    fft_size = 4096 #Should be a power of 2
+    fft_size = 2048 #Should be a power of 2
     samp_rate = 250e3
-
-    middle_freq = 90.3e6 #NRK P1
-    #middle_freq = 144.450e6 #Vassfjellet
-    gain = 10
+    
+    #middle_freq = 90.3e6 #NRK P1
+    middle_freq = 144.400e6 #Vassfjellet
+    #middle_freq = 96.3e6
+    gain = 30
     bandwidth = 250e3
     
-    morse_evaluation_time_range = 20#seconds
+    morse_evaluation_time_range = 10#seconds
     buffer_size_max = (int)(samp_rate / fft_size) * morse_evaluation_time_range
     
     
     #### Options set up ####
     parser = OptionParser(option_class=eng_option, usage="%prog: [options]")
     parser.add_option("-f","--file", dest="filename", help="Use .wav FILE as source", metavar="FILE")
+    parser.add_option("-F","--middle_frequency", type="int", dest="freq",  help="Set middle frequency (Hz)")
     #TODO add more options
 
 
@@ -165,7 +171,13 @@ if __name__ == '__main__':
     if (options.filename):
         sourceType = 1
         filename = options.filename
-    
+        print "Source file: ", filename
+    elif (options.freq):
+        middle_freq = options.freq
+
+
+
+    print "Middle frequency: ", middle_freq
 
     #### Radio set up ####
     radio = radio_input(fft_size, samp_rate, middle_freq, gain, bandwidth, sourceType, filename)
@@ -177,53 +189,53 @@ if __name__ == '__main__':
     
     fft_data = []
     fft_feeding_frames = []
+    floats = []
 
-    ##### crude and dirty animation of fft spectrum for bug testing ####
-#    firstAnimStage = True #animation code
-#    plt.ion() #animation test code
 
     #### fft feeding loop ####
     try:
         while True:
+            #time.sleep(0.1)
             
-            time.sleep(0.1) #doing this as it avoids some memory issues, a stream based solutions is probably better
-            #print "sink length ",len(radio.fft_sink_real.data())
             
-            if len (radio.fft_sink_real.data()) > radio.fft_size:
-
-                fft_data.extend(20*np.log10(np.abs(radio.fft_sink_real.data())))
-                
-#                secondAnimStage = True #animation test code
-
-                while (radio.fft_size < len(fft_data)):
-                    
-                    fft_feeding_frames.append(fft_data[0 : radio.fft_size])
-                    
-#                    if firstAnimStage: #animation test code.
-#                        firstAnimStage = False #animation test code
-#                        pl, = plt.plot(fft_data[0 : radio.fft_size]) #animation test code
-#                    elif secondAnimStage: #animation test code
-#                        secondAnimStage = False #animation test code
-#                        pl.set_ydata(fft_data[0 : radio.fft_size]) #animation test code
-#                        plt.draw() #animation test code
-
-                    del fft_data[0 : radio.fft_size]
-                
-                #### feed frame to decoder ####
-                decoder.feed_input(fft_feeding_frames)
-                
-                del fft_feeding_frames[:]
+            fft=radio.msgq_out.delete_head().to_string() # this indeed blocks
             
-                radio.fft_sink_real.reset()
+            def feedData ():
+                fft_feeding_frames = []
+                floats=[]
+                if (len(fft)>fft_size):
+                    for i in range(0,len(fft),4):
+                        floats.append(struct.unpack_from('f',fft[i:i+4]))
+                    #print "got",len(floats), "floats; FFT size is", radio.fft_size
+                    i=0
+            
+        
+                    while i<len(floats): # gnuradio might sometimes send multiple vectors at once
+                        frame=floats[i:i+radio.fft_size]
+                        #print "test of length frame ", len(frame)
+                        fft_feeding_frames.append(frame)
+                        i+=radio.fft_size
+        
+                    if (len(fft_feeding_frames)>0):
+                        decoder.feed_input(fft_feeding_frames)
+            
+            #thread.start_new_thread(feedData, ())
+            feedData()
+
 
 
     except KeyboardInterrupt: #catch control-c to leave loop
             pass
+
+
+
 
     #Finish doing stuff here:
     print ""
     print "Shutting down!"
     radio.stop()
     radio.wait()
+
+
 
 

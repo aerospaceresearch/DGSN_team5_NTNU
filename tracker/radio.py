@@ -1,3 +1,16 @@
+"""
+radio.py a simple GQRX network interface
+
+DESCRIPTION
+    A class that let you connect to a GQRX tcp-server and controll it
+
+USAGE:
+    ra = radio.radio()
+    ra.init()
+    ra.mode(ra.MODE_FM)
+    ra.tune(105000000)
+"""
+
 import socket
 
 TCPPORT = 7356 # radio tcp port
@@ -22,6 +35,7 @@ class radio:
 
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+    # Send a raw command to radio
     def cmd(self, cmd):
         self.tcp.send(cmd + "\n")
         return self.tcp.recv(BUFFERSIZE)
@@ -31,21 +45,21 @@ class radio:
         return self.cmd('f')
 
     # get current mode
-    def getmode(self, mode):
+    def getmode(self):
         return self.cmd('m')
 
-    # get signal strength
+    # get current signal level
     def getlevel(self):
         return self.cmd('l')
 
-    # tune to a frequency
+    # tune to a frequency in Hz
     def tune(self, frequency):
         if self.cmd('F %d' % (frequency)) == self.ST_OK:
             return self.getfreq() - frequency
         else:
             return False
 
-    # change receiver mode
+    # change radio mode
     def mode(self, mode):
         if self.cmd('M ' + mode) == self.ST_OK:
             return self.getmode() == mode
@@ -57,12 +71,15 @@ class radio:
         self.cmd('c')
         self.tcp.close()
 
+    # start audio recording
     def aos(self):
         return self.cmd('AOS') == self.ST_OK
 
+    # stop audio recording
     def los(self):
         return self.cmd("LOS") == self.ST_OK
 
+    # connect to radio
     def init(self):
         try:
             self.tcp.connect((HOST, TCPPORT))

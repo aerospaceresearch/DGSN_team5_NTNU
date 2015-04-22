@@ -106,9 +106,6 @@ def main(stdscr):
             observe = predict.observe(tle, GROUNDSTATION)
             name = observe['name'][2:]
 
-            timeleft = transit.end - now
-            minutes = int(timeleft / 60)
-            seconds = int(timeleft - minutes * 60) 
 
             if transit.start > now: # waiting for upcoming satellite
                 if recording: # stop recording
@@ -121,6 +118,9 @@ def main(stdscr):
                     ra.los()
                     recording = False
 
+                timeleft = transit.start - now
+                minutes = int(timeleft / 60)
+                seconds = int(timeleft - minutes * 60) 
                 writeline("Waiting for %s AOS: %s, %s   %02.3f/%02.3f @ %d + %d" % (
                     name,
                     aostime,
@@ -148,6 +148,9 @@ def main(stdscr):
                     recording = True
 
                 levels.append(float(ra.getlevel())) # gather statistics
+                timeleft = transit.end - now
+                minutes = int(timeleft / 60)
+                seconds = int(timeleft - minutes * 60) 
                 writeline("Tracking %s LOS: %s, %s   %02.3f/%02.3f @ %d + %d" % (
                     name,
                     lostime,

@@ -7,14 +7,16 @@ import time
 import logging
 import curses
 import predict
+import argparse
 import radio
 import satellites
+
 
 SATELLITES = satellites.SATELLITES
 
 
 GROUNDSTATION = (63.418, -10.399, 80) # lat (N), long (W), alt (meters)
-MINELEVATION  =  60 # degrees
+MINELEVATION  =  0 # degrees
 UPDATEINTERVAL = 0.2 # seconds between update
 
 FREQADJUST = 100 # Hz to adjust when using arrow keys
@@ -71,9 +73,13 @@ def nextsat():
 
 def main(stdscr):
 
-
     recording = False
     levels = []
+
+    # parse program arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--doppler", help="automatic correction of Doppler shift", action="store_true")
+    args = parser.parse_args()
 
     stdscr.nodelay(1)
 
@@ -94,7 +100,7 @@ def main(stdscr):
             elif c == 259: # down arrow
                 freqadjust += FREQADJUST
             elif c == 10: # enter key
-                ra.tune(freq)
+                ra.tune(freq + freqadjust)
 
             now = time.time()
             observe = predict.observe(tle, GROUNDSTATION)
@@ -126,8 +132,11 @@ def main(stdscr):
                 ))
 
             else:
-                dopplerfreq = freq + observe['doppler']/100000000 * freq 
-                ra.tune(dopplerfreq + freqadjust)
+                if args.doppler:
+                    f = freq + observe['doppler']/100000000 * freq
+                    ra.tune(f + freqadjust)
+                else:
+                    f = freq
 
                 if not recording: # start recording
                     logging.info("AOS of %s at %d Hz for %.3f min (%.3f deg) " % (
@@ -145,7 +154,7 @@ def main(stdscr):
                     "%03d:%02d" % (minutes, seconds),
                     observe['elevation'],
                     transit.peak()['elevation'],
-                    dopplerfreq,
+                    f,
                     freqadjust
                 ))
 
@@ -165,5 +174,3 @@ if __name__ == "__main__":
         ra.close()
         logging.info("Exiting")
         print ""
-
-
